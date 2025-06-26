@@ -25,7 +25,7 @@ public class MySqlProductDao extends MySqlDaoBase implements ProductDao
 
         // Build dynamic SQL query based on provided parameters
         StringBuilder sql = new StringBuilder("SELECT * FROM products WHERE 1=1 ");
-        
+
         if (categoryId != null && categoryId != -1) {
             sql.append("AND category_id = ? ");
         }
@@ -42,9 +42,9 @@ public class MySqlProductDao extends MySqlDaoBase implements ProductDao
         try (Connection connection = getConnection())
         {
             PreparedStatement statement = connection.prepareStatement(sql.toString());
-            
+
             int parameterIndex = 1;
-            
+
             if (categoryId != null && categoryId != -1) {
                 statement.setInt(parameterIndex++, categoryId);
             }
@@ -80,7 +80,7 @@ public class MySqlProductDao extends MySqlDaoBase implements ProductDao
         List<Product> products = new ArrayList<>();
 
         String sql = "SELECT * FROM products " +
-                    " WHERE category_id = ? ";
+                " WHERE category_id = ? ";
 
         try (Connection connection = getConnection())
         {
@@ -168,6 +168,7 @@ public class MySqlProductDao extends MySqlDaoBase implements ProductDao
         return null;
     }
 
+
     @Override
     public void update(int productId, Product product)
     {
@@ -181,7 +182,6 @@ public class MySqlProductDao extends MySqlDaoBase implements ProductDao
                 "   , stock = ? " +
                 "   , featured = ? " +
                 " WHERE product_id = ?;";
-
         try (Connection connection = getConnection())
         {
             PreparedStatement statement = connection.prepareStatement(sql);
