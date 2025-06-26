@@ -1,110 +1,240 @@
-package org.yearup.controllers;
+package org.yearup.data.mysql;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.stereotype.Component;
 import org.yearup.models.Product;
 import org.yearup.data.ProductDao;
 
+import javax.sql.DataSource;
 import java.math.BigDecimal;
+import java.sql.*;
+import java.util.ArrayList;
 import java.util.List;
 
-@RestController
-@RequestMapping("products")
-@CrossOrigin
-public class ProductsController
+@Component
+public class MySqlProductDao extends MySqlDaoBase implements ProductDao
 {
-    private ProductDao productDao;
-
-    @Autowired
-    public ProductsController(ProductDao productDao)
+    public MySqlProductDao(DataSource dataSource)
     {
-        this.productDao = productDao;
+        super(dataSource);
     }
 
-    @GetMapping("")
-    @PreAuthorize("permitAll()")
-    public List<Product> search(@RequestParam(name="cat", required = false) Integer categoryId,
-                                @RequestParam(name="minPrice", required = false) BigDecimal minPrice,
-                                @RequestParam(name="maxPrice", required = false) BigDecimal maxPrice,
-                                @RequestParam(name="color", required = false) String color
-                                )
+    @Override
+    public List<Product> search(Integer categoryId, BigDecimal minPrice, BigDecimal maxPrice, String color)
     {
-        try
-        {
-            return productDao.search(categoryId, minPrice, maxPrice, color);
+        List<Product> products = new ArrayList<>();
+
+        // Build dynamic SQL query based on provided parameters
+        StringBuilder sql = new StringBuilder("SELECT * FROM products WHERE 1=1 ");
+        
+        if (categoryId != null && categoryId != -1) {
+            sql.append("AND category_id = ? ");
         }
-        catch(Exception ex)
+        if (minPrice != null && minPrice.compareTo(new BigDecimal("-1")) != 0) {
+            sql.append("AND price >= ? ");
+        }
+        if (maxPrice != null && maxPrice.compareTo(new BigDecimal("-1")) != 0) {
+            sql.append("AND price <= ? ");
+        }
+        if (color != null && !color.isEmpty()) {
+            sql.append("AND color = ? ");
+        }
+
+        try (Connection connection = getConnection())
         {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Oops... our bad.");
+            PreparedStatement statement = connection.prepareStatement(sql.toString());
+            
+            int parameterIndex = 1;
+            
+            if (categoryId != null && categoryId != -1) {
+                statement.setInt(parameterIndex++, categoryId);
+            }
+            if (minPrice != null && minPrice.compareTo(new BigDecimal("-1")) != 0) {
+                statement.setBigDecimal(parameterIndex++, minPrice);
+            }
+            if (maxPrice != null && maxPrice.compareTo(new BigDecimal("-1")) != 0) {
+                statement.setBigDecimal(parameterIndex++, maxPrice);
+            }
+            if (color != null && !color.isEmpty()) {
+                statement.setString(parameterIndex++, color);
+            }
+
+            ResultSet row = statement.executeQuery();
+
+            while (row.next())
+            {
+                Product product = mapRow(row);
+                products.add(product);
+            }
+        }
+        catch (SQLException e)
+        {
+            throw new RuntimeException(e);
+        }
+
+        return products;
+    }
+
+    @Override
+    public List<Product> listByCategoryId(int categoryId)
+    {
+        List<Product> products = new ArrayList<>();
+
+        String sql = "SELECT * FROM products " +
+                    " WHERE category_id = ? ";
+
+        try (Connection connection = getConnection())
+        {
+            PreparedStatement statement = connection.prepareStatement(sql);
+            statement.setInt(1, categoryId);
+
+            ResultSet row = statement.executeQuery();
+
+            while (row.next())
+            {
+                Product product = mapRow(row);
+                products.add(product);
+            }
+        }
+        catch (SQLException e)
+        {
+            throw new RuntimeException(e);
+        }
+
+        return products;
+    }
+
+
+    @Override
+    public Product getById(int productId)
+    {
+        String sql = "SELECT * FROM products WHERE product_id = ?";
+        try (Connection connection = getConnection())
+        {
+            PreparedStatement statement = connection.prepareStatement(sql);
+            statement.setInt(1, productId);
+
+            ResultSet row = statement.executeQuery();
+
+            if (row.next())
+            {
+                return mapRow(row);
+            }
+        }
+        catch (SQLException e)
+        {
+            throw new RuntimeException(e);
+        }
+        return null;
+    }
+
+    @Override
+    public Product create(Product product)
+    {
+
+        String sql = "INSERT INTO products(name, price, category_id, description, color, image_url, stock, featured) " +
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
+
+        try (Connection connection = getConnection())
+        {
+            PreparedStatement statement = connection.prepareStatement(sql, PreparedStatement.RETURN_GENERATED_KEYS);
+            statement.setString(1, product.getName());
+            statement.setBigDecimal(2, product.getPrice());
+            statement.setInt(3, product.getCategoryId());
+            statement.setString(4, product.getDescription());
+            statement.setString(5, product.getColor());
+            statement.setString(6, product.getImageUrl());
+            statement.setInt(7, product.getStock());
+            statement.setBoolean(8, product.isFeatured());
+
+            int rowsAffected = statement.executeUpdate();
+
+            if (rowsAffected > 0) {
+                // Retrieve the generated keys
+                ResultSet generatedKeys = statement.getGeneratedKeys();
+
+                if (generatedKeys.next()) {
+                    // Retrieve the auto-incremented ID
+                    int productId = generatedKeys.getInt(1);
+
+                    // get the newly inserted product
+                    return getById(productId);
+                }
+            }
+        }
+        catch (SQLException e)
+        {
+            throw new RuntimeException(e);
+        }
+        return null;
+    }
+
+    @Override
+    public void update(int productId, Product product)
+    {
+        String sql = "UPDATE products" +
+                " SET name = ? " +
+                "   , price = ? " +
+                "   , category_id = ? " +
+                "   , description = ? " +
+                "   , color = ? " +
+                "   , image_url = ? " +
+                "   , stock = ? " +
+                "   , featured = ? " +
+                " WHERE product_id = ?;";
+
+        try (Connection connection = getConnection())
+        {
+            PreparedStatement statement = connection.prepareStatement(sql);
+            statement.setString(1, product.getName());
+            statement.setBigDecimal(2, product.getPrice());
+            statement.setInt(3, product.getCategoryId());
+            statement.setString(4, product.getDescription());
+            statement.setString(5, product.getColor());
+            statement.setString(6, product.getImageUrl());
+            statement.setInt(7, product.getStock());
+            statement.setBoolean(8, product.isFeatured());
+            statement.setInt(9, productId);
+
+            statement.executeUpdate();
+        }
+        catch (SQLException e)
+        {
+            throw new RuntimeException(e);
         }
     }
 
-    @GetMapping("{id}")
-    @PreAuthorize("permitAll()")
-    public Product getById(@PathVariable int id )
+    @Override
+    public void delete(int productId)
     {
-        try
+
+        String sql = "DELETE FROM products " +
+                " WHERE product_id = ?;";
+
+        try (Connection connection = getConnection())
         {
-            var product = productDao.getById(id);
+            PreparedStatement statement = connection.prepareStatement(sql);
+            statement.setInt(1, productId);
 
-            if(product == null)
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND);
-
-            return product;
+            statement.executeUpdate();
         }
-        catch(Exception ex)
+        catch (SQLException e)
         {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Oops... our bad.");
+            throw new RuntimeException(e);
         }
     }
 
-    @PostMapping()
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
-    public Product addProduct(@RequestBody Product product)
+    protected static Product mapRow(ResultSet row) throws SQLException
     {
-        try
-        {
-            return productDao.create(product);
-        }
-        catch(Exception ex)
-        {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Oops... our bad.");
-        }
-    }
+        int productId = row.getInt("product_id");
+        String name = row.getString("name");
+        BigDecimal price = row.getBigDecimal("price");
+        int categoryId = row.getInt("category_id");
+        String description = row.getString("description");
+        String color = row.getString("color");
+        int stock = row.getInt("stock");
+        boolean isFeatured = row.getBoolean("featured");
+        String imageUrl = row.getString("image_url");
 
-    @PutMapping("{id}")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
-    public void updateProduct(@PathVariable int id, @RequestBody Product product)
-    {
-        try
-        {
-            productDao.create(product);
-        }
-        catch(Exception ex)
-        {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Oops... our bad.");
-        }
-    }
-
-    @DeleteMapping("{id}")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
-    public void deleteProduct(@PathVariable int id)
-    {
-        try
-        {
-            var product = productDao.getById(id);
-
-            if(product == null)
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND);
-
-            productDao.delete(id);
-        }
-        catch(Exception ex)
-        {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Oops... our bad.");
-        }
+        return new Product(productId, name, price, categoryId, description, color, stock, isFeatured, imageUrl);
     }
 }
