@@ -38,10 +38,10 @@ This project was created as part of my final capstone at Year Up. It lets users 
 
 ### 🖼️ Screenshots
 
-Category List  
+image.1
+image.2
+image.3
 
-
-Product Details  
 
 
 ---
@@ -56,3 +56,4 @@ I personally found the category-to-product listing endpoint clean and concise:
 public List<Product> getProductsByCategory(@PathVariable int categoryId) {
     return productDao.listByCategoryId(categoryId);
 }
+
